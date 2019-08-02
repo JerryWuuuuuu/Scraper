@@ -126,15 +126,24 @@ def parse_inventory(response, ASIN, seller_id, rating, reviews, asin_inventory =
     asin_inventory.append(output_dict)
     print(qty)
     return asin_inventory
-
+#method that gets the rating out of five stars for the product
+#param response
+#return rating
 def parse_rating(response):
     soup = BeautifulSoup(response, 'lxml')
     rating = soup.find('div', id='averageCustomerReviews').find('span', id='acrPopover').get('title')
+    rating = rating[:3]
+    rating = float(rating)
     return rating
 
+#Method that gets the number of reviews for the product
+#param
 def parse_reviews(response):
-    soup = BeautifulSoup(response, 'lxml')\
+    soup = BeautifulSoup(response, 'lxml')
     reviews = soup.find('div', id='averageCustomerReviews').find('span', id='acrCustomerReviewText').text
+    reviews_index = reviews.find('customer')
+    reviews = reviews[:reviews_index-1]
+    reviews = int(reviews)
     return reviews
 
 
@@ -198,11 +207,13 @@ def parse_urls(ASIN):
     #     reviews = parse_reviews
     #     inventory = parse_inventory(product_response, ASIN, seller_id, rating, reviews)
     print(seller_ids)
-    print(inventory)
+    #print(inventory)
 
 
 
 r1 =open('/Users/jerrywu/PycharmProjects/test/HTML Texts/2019-08-01_B07L6L2CKF_inventory_normal.txt','r').read()
+print(parse_rating(r1))
+print(parse_reviews(r1))
 #print(check_pages(r1))
 #print(parse_seller_id(r1,'B0713WFVDV'))
 
