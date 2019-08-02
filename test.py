@@ -4,6 +4,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 
 #Request for a url using Scrape.API
+#param url, asin, seller_id(default to None)
 def get_request(url, asin, seller_id=None):
     payload = {'api_key': "39c9d63b8d4abb7fb6478c011ea3c72a", 'url': url}
     headers = {
@@ -14,7 +15,7 @@ def get_request(url, asin, seller_id=None):
     }
     count = 0
     max_tries = 3
-    #catches errors, and triees to reconnect up to a max of two more times
+    #catches errors, and tries to reconnect up to a max of two more times
     while count < max_tries:
         try:
             r = requests.get('http://api.scraperapi.com', params=payload, headers=headers, timeout=10)
@@ -32,9 +33,10 @@ def get_request(url, asin, seller_id=None):
             print('Timeout Error, tries: ',count)
 
 #Method that parses the html to find the names of the sellers of a certain ASIN, their id,
-#the price at which they are selling at, and whether or not they are FBA,
-# SFP, or FBM.
-def parse_seller_id(response, ASIN, results_list=[]):
+#the price at which they are selling at, and whether or not they are FBA, SFP, or FBM.
+#param response, ASIN, results_list
+#return results_list
+def parse_seller_id(response, ASIN, results_list=[]): #results_list default to empty. Used to make sure duplicates are checked through multiple pages, if they exist
     soup = BeautifulSoup(response, 'lxml')
 
     for element in soup.find_all('div', class_='a-row a-spacing-mini olpOffer'): #looping through the rows of the table that has the merchants
@@ -98,60 +100,82 @@ def parse_seller_id(response, ASIN, results_list=[]):
 
     return results_list
 
-
-
 #Method that parses the html to find the inventory of a certain ASIN from a certain merchant
-def parse_inventory(response):
+#param response
+#return asin_inventory
+def parse_inventory(response, ASIN, seller_id, rating, reviews, asin_inventory = []):
     soup = BeautifulSoup(response, 'lxml')
-    #for x in urls:
-       #soup = BeautifulSoup(response, 'lxml')
     #finding the text above the drop down menu
     availability = soup.find('div', id='availability').span.text
-
-    #if no text, then it is out of stock
-    if not availability:
+    if not availability: #if no text, then it is out of stock
         qty = 0
     #else, if text is "Only 'number' left in stock - order soon" find the number
     elif not availability.find('Only ') == -1:
         qty = availability[availability.find('Only ')+5:availability.find(' left')]
-    #else if there is text, find that text
+    #else if the text is "In stock on (date)", print the text
     elif availability.find('Only ') == -1 and not availability.find('In stock on') == -1:
         qty = availability.strip()
-    #else, check the dropdown menu and find the last number(#in stock)
+    #else if the dropdown menu exists, find the last number(#in stock)
     elif not soup.find_all('select', id='quantity') == []:
         for element in (soup.find_all('select', id='quantity')):
             qty = element.find_all('option')[-1].text
+    # else no dropdown menu, but in stock, just print "error"
     else:
         qty = 'error'
+    output_dict = {'asin': ASIN, 'seller_id': seller_id, 'inventory': qty, 'rating': rating, 'reviews': reviews}
+    asin_inventory.append(output_dict)
     print(qty)
+    return asin_inventory
 
+def parse_rating(response):
+    soup = BeautifulSoup(response, 'lxml')
+    rating = soup.find('div', id='averageCustomerReviews').find('span', id='acrPopover').get('title')
+    return rating
+
+def parse_reviews(response):
+    soup = BeautifulSoup(response, 'lxml')\
+    reviews = soup.find('div', id='averageCustomerReviews').find('span', id='acrCustomerReviewText').text
+    return reviews
+
+
+#Method that checks to see if there are multiple pages on the sellers page
+#param response
+#return check
 def check_pages(response):
     check = False
     soup = BeautifulSoup(response, 'lxml')
     pages_exist = not(soup.find_all('ul', class_='a-pagination') == [])
-    if pages_exist:
-        for element in (soup.find_all('ul', class_='a-pagination')):
-            if element.find('li', class_='a-last'):
-                if element.find('li', class_='a-disabled a-last'):
+    if pages_exist: #checks if there are multiple pages
+        for element in (soup.find_all('ul', class_='a-pagination')): #loop through the buttons ("previous", page numbers, "next")at the bottom of the page
+            if element.find('li', class_='a-last'): #finding the last button,which is "Next"
+                if element.find('li', class_='a-disabled a-last'): #if it is disabled, then you are on the last page and check is false
                     check = False
-                else:
+                else: #otherwise, check is true
                     check = True
-
     return check
 
+#Method that gets the url of the next page on the sellers page
+#param response
+#return link
 def get_nextpage_url(response):
     soup = BeautifulSoup(response, 'lxml')
     link = ''
-    for element in (soup.find_all('ul', class_='a-pagination')):
-        link = link + ('www.amazon.com' + element.find('li', class_='a-last').a.get('href'))
+    for element in (soup.find_all('ul', class_='a-pagination')): #loop through the different page buttons
+        link = link + ('www.amazon.com' + element.find('li', class_='a-last').a.get('href')) #initiate 'link' to be the link that comes with the "next" button
     return link
 
+#Method that gets url of the sellers page
+#param ASIN
+#return sellers_url_array
 def get_sellers_url(ASIN):
     sellers_url_array = []
-    sellers_url = 'https://www.amazon.com/gp/offer-listing/' + ASIN + '/ref=olp_f_new?ie=UTF8&f_new=true'
+    sellers_url = 'https://www.amazon.com/gp/offer-listing/' + ASIN + '/ref=olp_f_new?ie=UTF8&f_new=true' #puts the ASIN into the sellers page URL, making sure that the products are all new
     sellers_url_array.append(sellers_url)
     return sellers_url_array
 
+#Method that gets the url of the specific product and seller page
+#param ASIN, seller_id
+#return product_seller_url
 def get_product_seller_url(ASIN, seller_id):
     product_seller_url = 'https://www.amazon.com/dp/' + ASIN + '/ref=sr_1_2?m=' + seller_id + '&th=1&psc=1'
     return product_seller_url
@@ -166,19 +190,22 @@ def parse_urls(ASIN):
     while check_pages(sellers_response):
         next_url = get_nextpage_url(sellers_response)
         sellers_response = get_request(url=next_url, asin=ASIN)
-        seller_ids = (parse_seller_id(sellers_response,ASIN, seller_ids))
+        seller_ids = (parse_seller_id(sellers_response, ASIN, seller_ids))
     # for seller_id in seller_ids:
     #     product_url = get_product_seller_url(ASIN, seller_id)
     #     product_response = get_request(url=product_url, asin=ASIN, seller_id=seller_id)
-    #     parse_inventory(product_response)
+    #     rating = parse_rating(product_response)
+    #     reviews = parse_reviews
+    #     inventory = parse_inventory(product_response, ASIN, seller_id, rating, reviews)
     print(seller_ids)
+    print(inventory)
 
 
 
-#r1 =open('/Users/jerrywu/PycharmProjects/test/HTML Texts/2019-08-01_B0713WFVDV.txt','r').read()
+r1 =open('/Users/jerrywu/PycharmProjects/test/HTML Texts/2019-08-01_B07L6L2CKF_inventory_normal.txt','r').read()
 #print(check_pages(r1))
 #print(parse_seller_id(r1,'B0713WFVDV'))
-#parse_inventory(r1)
+
 
 #function that downloads the HTML from a url
 def downloadHTML(asin, seller_id, response_text):
@@ -191,8 +218,7 @@ def downloadHTML(asin, seller_id, response_text):
     file.write(response_text)
     file.close()
 
-parse_urls('B07GDFTSPV')
-
+#parse_urls('B07GDFTSPV')
 
 
 #response = get_request('https://www.amazon.com/gp/offer-listing/B07GDFTSPV/ref=olp_page_next?ie=UTF8&f_all=true&f_new=true&startIndex=10', 'B07GDFTSPV')
